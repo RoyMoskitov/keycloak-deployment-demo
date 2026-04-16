@@ -11,6 +11,9 @@ jobs:
   security-scan:
     name: DAST Security Scan
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
 
     steps:
       - uses: actions/checkout@v4
@@ -91,6 +94,48 @@ jobs:
             echo "| Issues found | **$DETECTED** |" >> $GITHUB_STEP_SUMMARY
             echo "| Passed | $OK |" >> $GITHUB_STEP_SUMMARY
 
+            if [ -f results/attacks.json ]; then
+              FULLY=$(jq '[.[] | select(.status=="FULLY_ENABLED")] | length' results/attacks.json)
+              PARTIAL=$(jq '[.[] | select(.status=="PARTIALLY_ENABLED")] | length' results/attacks.json)
+              MITIGATED=$(jq '[.[] | select(.status=="MITIGATED")] | length' results/attacks.json)
+
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "### Attack Vectors (CAPEC / MITRE ATT&CK)" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "**Summary:** :red_circle: $FULLY fully enabled / :yellow_circle: $PARTIAL partial / :green_circle: $MITIGATED mitigated" >> $GITHUB_STEP_SUMMARY
+
+              ROW='"| \(.vector.capecId) | \(.vector.name) | `\(.vector.attckTechnique)` | \(.vector.severity) | \(.coveragePercent)% (\(.triggeredCheckIds | length)/\(.vector.requiredCheckIds | length)) |"'
+
+              if [ "$FULLY" -gt 0 ]; then
+                echo "" >> $GITHUB_STEP_SUMMARY
+                echo "#### :red_circle: Fully Enabled — exploitable now" >> $GITHUB_STEP_SUMMARY
+                echo "| CAPEC | Attack | ATT&CK | Severity | Coverage |" >> $GITHUB_STEP_SUMMARY
+                echo "|-------|--------|--------|----------|----------|" >> $GITHUB_STEP_SUMMARY
+                jq -r ".[] | select(.status==\"FULLY_ENABLED\") | $ROW" results/attacks.json >> $GITHUB_STEP_SUMMARY
+              fi
+
+              if [ "$PARTIAL" -gt 0 ]; then
+                echo "" >> $GITHUB_STEP_SUMMARY
+                echo "#### :yellow_circle: Partially Enabled — some prerequisites met" >> $GITHUB_STEP_SUMMARY
+                echo "| CAPEC | Attack | ATT&CK | Severity | Coverage |" >> $GITHUB_STEP_SUMMARY
+                echo "|-------|--------|--------|----------|----------|" >> $GITHUB_STEP_SUMMARY
+                jq -r ".[] | select(.status==\"PARTIALLY_ENABLED\") | $ROW" results/attacks.json >> $GITHUB_STEP_SUMMARY
+              fi
+
+              if [ "$MITIGATED" -gt 0 ]; then
+                echo "" >> $GITHUB_STEP_SUMMARY
+                echo "<details><summary>:green_circle: Mitigated ($MITIGATED) — click to expand</summary>" >> $GITHUB_STEP_SUMMARY
+                echo "" >> $GITHUB_STEP_SUMMARY
+                echo "| CAPEC | Attack | ATT&CK | Severity | Coverage |" >> $GITHUB_STEP_SUMMARY
+                echo "|-------|--------|--------|----------|----------|" >> $GITHUB_STEP_SUMMARY
+                jq -r ".[] | select(.status==\"MITIGATED\") | $ROW" results/attacks.json >> $GITHUB_STEP_SUMMARY
+                echo "" >> $GITHUB_STEP_SUMMARY
+                echo "</details>" >> $GITHUB_STEP_SUMMARY
+              fi
+
+              echo "fully_enabled=$FULLY" >> $GITHUB_OUTPUT
+            fi
+
             echo "Scan complete: $DETECTED issues found out of $TOTAL checks"
           else
             echo "Scanner failed to produce results"
@@ -98,12 +143,38 @@ jobs:
             exit 1
           fi
 
+      - name: Run SARIF export
+        if: always() && hashFiles('results/results.json') != ''
+        run: |
+          docker run --rm --network scan-net \
+            -v $(pwd)/results:/app/results \
+            ghcr.io/roymoskitov/keycloak-scanner:latest \
+            --cli \
+            --keycloak-audit.server-url=http://keycloak:8080 \
+            --keycloak-audit.realm=my-app \
+            --keycloak-audit.client-id=admin-cli \
+            --keycloak-audit.username=admin \
+            --keycloak-audit.password=adminpass \
+            --output=/app/results/results.sarif \
+            --format=sarif \
+            --spring.main.web-application-type=none \
+            2>>scanner.log || echo "SARIF export failed, continuing"
+
+      - name: Upload SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always() && hashFiles('results/results.sarif') != ''
+        with:
+          sarif_file: results/results.sarif
+          category: keycloak-dast
+
       - name: Upload results
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: security-scan-results
-          path: results/
+          path: |
+            results/
+            scanner.log
 
       - name: Gate - fail if critical issues found
         env:
