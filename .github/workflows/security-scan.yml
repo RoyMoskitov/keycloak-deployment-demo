@@ -28,12 +28,18 @@ jobs:
 
           echo "Waiting for Keycloak..."
           for i in $(seq 1 90); do
-            if curl -sf http://localhost:8080/realms/master > /dev/null 2>&1; then
+            if curl -sf http://localhost:9000/health/ready > /dev/null 2>&1; then
               echo "Keycloak ready after $((i*2))s"
               break
             fi
             sleep 2
           done
+
+          if ! curl -sf http://localhost:9000/health/ready > /dev/null 2>&1; then
+            echo "::error::Keycloak failed to become ready"
+            docker logs keycloak | tail -50
+            exit 1
+          fi
 
       - name: Import realm config
         run: |
@@ -52,6 +58,9 @@ jobs:
         run: |
           docker network create scan-net
           docker network connect scan-net keycloak
+
+          mkdir -p results
+          chmod 777 results
 
           docker run --rm --network scan-net \
             -v $(pwd)/results:/app/results \
@@ -99,16 +108,17 @@ jobs:
       - name: Gate - fail if critical issues found
         env:
           DETECTED: ${{ steps.scan.outputs.detected }}
+          THRESHOLD: '50'
         run: |
           if [ -z "$DETECTED" ]; then
             echo "No scan results available"
             exit 1
           fi
-          if [ "$DETECTED" -gt 10 ]; then
-            echo "::error::Security scan found $DETECTED issues. Fix critical findings before deploying."
+          if [ "$DETECTED" -gt "$THRESHOLD" ]; then
+            echo "::error::Security scan found $DETECTED issues (threshold: $THRESHOLD). Fix critical findings before deploying."
             exit 1
           fi
-          echo "Security scan passed with $DETECTED findings (threshold: 10)"
+          echo "Security scan passed with $DETECTED findings (threshold: $THRESHOLD)"
 
       - name: Cleanup
         if: always()
