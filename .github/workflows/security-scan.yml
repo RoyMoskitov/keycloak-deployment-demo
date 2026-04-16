@@ -161,7 +161,7 @@ jobs:
             2>>scanner.log || echo "SARIF export failed, continuing"
 
       - name: Upload SARIF to GitHub Security
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always() && hashFiles('results/results.sarif') != ''
         with:
           sarif_file: results/results.sarif
