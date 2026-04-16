@@ -37,12 +37,10 @@ jobs:
 
       - name: Import realm config
         run: |
-          # Get admin token
           TOKEN=$(curl -s -X POST http://localhost:8080/realms/master/protocol/openid-connect/token \
             -d "grant_type=password&client_id=admin-cli&username=admin&password=adminpass" \
             | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
 
-          # Import realm
           curl -s -X POST http://localhost:8080/admin/realms \
             -H "Authorization: Bearer $TOKEN" \
             -H "Content-Type: application/json" \
@@ -52,11 +50,9 @@ jobs:
         id: scan
         shell: bash {0}
         run: |
-          # Create network for scanner <-> keycloak communication
           docker network create scan-net
           docker network connect scan-net keycloak
 
-          # Run scanner from published image
           docker run --rm --network scan-net \
             -v $(pwd)/results:/app/results \
             ghcr.io/roymoskitov/keycloak-scanner:latest \
@@ -86,7 +82,6 @@ jobs:
             echo "| Issues found | **$DETECTED** |" >> $GITHUB_STEP_SUMMARY
             echo "| Passed | $OK |" >> $GITHUB_STEP_SUMMARY
 
-            echo ""
             echo "Scan complete: $DETECTED issues found out of $TOTAL checks"
           else
             echo "Scanner failed to produce results"
@@ -101,9 +96,14 @@ jobs:
           name: security-scan-results
           path: results/
 
-      - name: Gate: fail if critical issues found
+      - name: Gate - fail if critical issues found
+        env:
+          DETECTED: ${{ steps.scan.outputs.detected }}
         run: |
-          DETECTED=${{ steps.scan.outputs.detected }}
+          if [ -z "$DETECTED" ]; then
+            echo "No scan results available"
+            exit 1
+          fi
           if [ "$DETECTED" -gt 10 ]; then
             echo "::error::Security scan found $DETECTED issues. Fix critical findings before deploying."
             exit 1
