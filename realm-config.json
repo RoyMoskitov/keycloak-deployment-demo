@@ -1,0 +1,10 @@
+{
+  "realm": "my-app",
+  "enabled": true,
+  "registrationAllowed": false,
+  "bruteForceProtected": true,
+  "failureFactor": 5,
+  "sslRequired": "external",
+  "eventsEnabled": true,
+  "adminEventsEnabled": true
+}

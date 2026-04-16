@@ -1,0 +1,118 @@
+name: Keycloak Security Check
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  security-scan:
+    name: DAST Security Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start Keycloak
+        run: |
+          docker run -d --name keycloak \
+            -e KEYCLOAK_ADMIN=admin \
+            -e KEYCLOAK_ADMIN_PASSWORD=adminpass \
+            -e KC_HEALTH_ENABLED=true \
+            -e KC_METRICS_ENABLED=true \
+            -p 8080:8080 \
+            -p 9000:9000 \
+            quay.io/keycloak/keycloak:26.0.7 start-dev
+
+          echo "Waiting for Keycloak..."
+          for i in $(seq 1 90); do
+            if curl -sf http://localhost:8080/realms/master > /dev/null 2>&1; then
+              echo "Keycloak ready after $((i*2))s"
+              break
+            fi
+            sleep 2
+          done
+
+      - name: Import realm config
+        run: |
+          # Get admin token
+          TOKEN=$(curl -s -X POST http://localhost:8080/realms/master/protocol/openid-connect/token \
+            -d "grant_type=password&client_id=admin-cli&username=admin&password=adminpass" \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+
+          # Import realm
+          curl -s -X POST http://localhost:8080/admin/realms \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/json" \
+            -d @realm-config.json || echo "Realm may already exist"
+
+      - name: Run Keycloak Security Scanner
+        id: scan
+        shell: bash {0}
+        run: |
+          # Create network for scanner <-> keycloak communication
+          docker network create scan-net
+          docker network connect scan-net keycloak
+
+          # Run scanner from published image
+          docker run --rm --network scan-net \
+            -v $(pwd)/results:/app/results \
+            ghcr.io/roymoskitov/keycloak-scanner:latest \
+            --cli \
+            --keycloak-audit.server-url=http://keycloak:8080 \
+            --keycloak-audit.realm=my-app \
+            --keycloak-audit.client-id=admin-cli \
+            --keycloak-audit.username=admin \
+            --keycloak-audit.password=adminpass \
+            --output=/app/results/results.json \
+            --format=json \
+            --spring.main.web-application-type=none \
+            2>scanner.log | tee scan-output.txt
+
+          if [ -f results/results.json ]; then
+            DETECTED=$(python3 -c "import json; d=json.load(open('results/results.json')); print(d['summary']['detected'])")
+            TOTAL=$(python3 -c "import json; d=json.load(open('results/results.json')); print(d['summary']['totalChecks'])")
+            OK=$(python3 -c "import json; d=json.load(open('results/results.json')); print(d['summary']['ok'])")
+
+            echo "detected=$DETECTED" >> $GITHUB_OUTPUT
+
+            echo "## Keycloak Security Scan" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+            echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+            echo "| Total checks | $TOTAL |" >> $GITHUB_STEP_SUMMARY
+            echo "| Issues found | **$DETECTED** |" >> $GITHUB_STEP_SUMMARY
+            echo "| Passed | $OK |" >> $GITHUB_STEP_SUMMARY
+
+            echo ""
+            echo "Scan complete: $DETECTED issues found out of $TOTAL checks"
+          else
+            echo "Scanner failed to produce results"
+            cat scanner.log
+            exit 1
+          fi
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-scan-results
+          path: results/
+
+      - name: Gate: fail if critical issues found
+        run: |
+          DETECTED=${{ steps.scan.outputs.detected }}
+          if [ "$DETECTED" -gt 10 ]; then
+            echo "::error::Security scan found $DETECTED issues. Fix critical findings before deploying."
+            exit 1
+          fi
+          echo "Security scan passed with $DETECTED findings (threshold: 10)"
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker stop keycloak 2>/dev/null || true
+          docker rm keycloak 2>/dev/null || true
+          docker network rm scan-net 2>/dev/null || true
