@@ -86,13 +86,13 @@ jobs:
 
             echo "detected=$DETECTED" >> $GITHUB_OUTPUT
 
-            echo "## Keycloak Security Scan" >> $GITHUB_STEP_SUMMARY
+            echo "## Сканирование безопасности Keycloak" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
-            echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
-            echo "| Total checks | $TOTAL |" >> $GITHUB_STEP_SUMMARY
-            echo "| Issues found | **$DETECTED** |" >> $GITHUB_STEP_SUMMARY
-            echo "| Passed | $OK |" >> $GITHUB_STEP_SUMMARY
+            echo "| Метрика | Значение |" >> $GITHUB_STEP_SUMMARY
+            echo "|---------|----------|" >> $GITHUB_STEP_SUMMARY
+            echo "| Всего проверок | $TOTAL |" >> $GITHUB_STEP_SUMMARY
+            echo "| Обнаружено проблем | **$DETECTED** |" >> $GITHUB_STEP_SUMMARY
+            echo "| Пройдено | $OK |" >> $GITHUB_STEP_SUMMARY
 
             if [ -f results/attacks.json ]; then
               FULLY=$(jq '[.[] | select(.status=="FULLY_ENABLED")] | length' results/attacks.json)
@@ -100,34 +100,34 @@ jobs:
               MITIGATED=$(jq '[.[] | select(.status=="MITIGATED")] | length' results/attacks.json)
 
               echo "" >> $GITHUB_STEP_SUMMARY
-              echo "### Attack Vectors (CAPEC / MITRE ATT&CK)" >> $GITHUB_STEP_SUMMARY
+              echo "### Векторы атак (CAPEC / MITRE ATT&CK)" >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
-              echo "**Summary:** :red_circle: $FULLY fully enabled / :yellow_circle: $PARTIAL partial / :green_circle: $MITIGATED mitigated" >> $GITHUB_STEP_SUMMARY
+              echo "**Итого:** :red_circle: $FULLY активных / :yellow_circle: $PARTIAL частичных / :green_circle: $MITIGATED нейтрализованных" >> $GITHUB_STEP_SUMMARY
 
-              ROW='"| \(.vector.capecId) | \(.vector.name) | `\(.vector.attckTechnique)` | \(.vector.severity) | \(.coveragePercent)% (\(.triggeredCheckIds | length)/\(.vector.requiredCheckIds | length)) |"'
+              ROW='"| \(.vector.capecId) | \(.vector.name) | `\(.vector.attckTechnique)` | \(.coveragePercent)% (\(.triggeredCheckIds | length)/\(.vector.requiredCheckIds | length)) |"'
 
               if [ "$FULLY" -gt 0 ]; then
                 echo "" >> $GITHUB_STEP_SUMMARY
-                echo "#### :red_circle: Fully Enabled — exploitable now" >> $GITHUB_STEP_SUMMARY
-                echo "| CAPEC | Attack | ATT&CK | Severity | Coverage |" >> $GITHUB_STEP_SUMMARY
-                echo "|-------|--------|--------|----------|----------|" >> $GITHUB_STEP_SUMMARY
+                echo "#### :red_circle: Активные — возможна эксплуатация" >> $GITHUB_STEP_SUMMARY
+                echo "| CAPEC | Вектор атаки | ATT&CK | Покрытие |" >> $GITHUB_STEP_SUMMARY
+                echo "|-------|--------------|--------|----------|" >> $GITHUB_STEP_SUMMARY
                 jq -r ".[] | select(.status==\"FULLY_ENABLED\") | $ROW" results/attacks.json >> $GITHUB_STEP_SUMMARY
               fi
 
               if [ "$PARTIAL" -gt 0 ]; then
                 echo "" >> $GITHUB_STEP_SUMMARY
-                echo "#### :yellow_circle: Partially Enabled — some prerequisites met" >> $GITHUB_STEP_SUMMARY
-                echo "| CAPEC | Attack | ATT&CK | Severity | Coverage |" >> $GITHUB_STEP_SUMMARY
-                echo "|-------|--------|--------|----------|----------|" >> $GITHUB_STEP_SUMMARY
+                echo "#### :yellow_circle: Частичные — часть предусловий выполнена" >> $GITHUB_STEP_SUMMARY
+                echo "| CAPEC | Вектор атаки | ATT&CK | Покрытие |" >> $GITHUB_STEP_SUMMARY
+                echo "|-------|--------------|--------|----------|" >> $GITHUB_STEP_SUMMARY
                 jq -r ".[] | select(.status==\"PARTIALLY_ENABLED\") | $ROW" results/attacks.json >> $GITHUB_STEP_SUMMARY
               fi
 
               if [ "$MITIGATED" -gt 0 ]; then
                 echo "" >> $GITHUB_STEP_SUMMARY
-                echo "<details><summary>:green_circle: Mitigated ($MITIGATED) — click to expand</summary>" >> $GITHUB_STEP_SUMMARY
+                echo "<details><summary>:green_circle: Нейтрализованные ($MITIGATED) — развернуть</summary>" >> $GITHUB_STEP_SUMMARY
                 echo "" >> $GITHUB_STEP_SUMMARY
-                echo "| CAPEC | Attack | ATT&CK | Severity | Coverage |" >> $GITHUB_STEP_SUMMARY
-                echo "|-------|--------|--------|----------|----------|" >> $GITHUB_STEP_SUMMARY
+                echo "| CAPEC | Вектор атаки | ATT&CK | Покрытие |" >> $GITHUB_STEP_SUMMARY
+                echo "|-------|--------------|--------|----------|" >> $GITHUB_STEP_SUMMARY
                 jq -r ".[] | select(.status==\"MITIGATED\") | $ROW" results/attacks.json >> $GITHUB_STEP_SUMMARY
                 echo "" >> $GITHUB_STEP_SUMMARY
                 echo "</details>" >> $GITHUB_STEP_SUMMARY
@@ -136,9 +136,9 @@ jobs:
               echo "fully_enabled=$FULLY" >> $GITHUB_OUTPUT
             fi
 
-            echo "Scan complete: $DETECTED issues found out of $TOTAL checks"
+            echo "Сканирование завершено: обнаружено $DETECTED проблем из $TOTAL проверок"
           else
-            echo "Scanner failed to produce results"
+            echo "Сканер не вернул результаты"
             cat scanner.log
             exit 1
           fi
