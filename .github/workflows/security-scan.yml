@@ -91,7 +91,7 @@ jobs:
             echo "| Метрика | Значение |" >> $GITHUB_STEP_SUMMARY
             echo "|---------|----------|" >> $GITHUB_STEP_SUMMARY
             echo "| Всего проверок | $TOTAL |" >> $GITHUB_STEP_SUMMARY
-            echo "| Обнаружено проблем | **$DETECTED** |" >> $GITHUB_STEP_SUMMARY
+            echo "| Обнаружено | **$DETECTED** |" >> $GITHUB_STEP_SUMMARY
             echo "| Пройдено | $OK |" >> $GITHUB_STEP_SUMMARY
 
             if [ -f results/attacks.json ]; then
@@ -102,13 +102,13 @@ jobs:
               echo "" >> $GITHUB_STEP_SUMMARY
               echo "### Векторы атак (CAPEC / MITRE ATT&CK)" >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
-              echo "**Итого:** :red_circle: $FULLY активных / :yellow_circle: $PARTIAL частичных / :green_circle: $MITIGATED нейтрализованных" >> $GITHUB_STEP_SUMMARY
+              echo "**Итого:** :red_circle: $FULLY полных / :yellow_circle: $PARTIAL частичных >50% / :green_circle: $MITIGATED частичных <50%" >> $GITHUB_STEP_SUMMARY
 
               ROW='"| \(.vector.capecId) | \(.vector.name) | `\(.vector.attckTechnique)` | \(.coveragePercent)% (\(.triggeredCheckIds | length)/\(.vector.requiredCheckIds | length)) |"'
 
               if [ "$FULLY" -gt 0 ]; then
                 echo "" >> $GITHUB_STEP_SUMMARY
-                echo "#### :red_circle: Активные — возможна эксплуатация" >> $GITHUB_STEP_SUMMARY
+                echo "#### :red_circle: Полные" >> $GITHUB_STEP_SUMMARY
                 echo "| CAPEC | Вектор атаки | ATT&CK | Покрытие |" >> $GITHUB_STEP_SUMMARY
                 echo "|-------|--------------|--------|----------|" >> $GITHUB_STEP_SUMMARY
                 jq -r ".[] | select(.status==\"FULLY_ENABLED\") | $ROW" results/attacks.json >> $GITHUB_STEP_SUMMARY
@@ -116,7 +116,7 @@ jobs:
 
               if [ "$PARTIAL" -gt 0 ]; then
                 echo "" >> $GITHUB_STEP_SUMMARY
-                echo "#### :yellow_circle: Частичные — часть предусловий выполнена" >> $GITHUB_STEP_SUMMARY
+                echo "#### :yellow_circle: Частичные >50%" >> $GITHUB_STEP_SUMMARY
                 echo "| CAPEC | Вектор атаки | ATT&CK | Покрытие |" >> $GITHUB_STEP_SUMMARY
                 echo "|-------|--------------|--------|----------|" >> $GITHUB_STEP_SUMMARY
                 jq -r ".[] | select(.status==\"PARTIALLY_ENABLED\") | $ROW" results/attacks.json >> $GITHUB_STEP_SUMMARY
@@ -124,7 +124,7 @@ jobs:
 
               if [ "$MITIGATED" -gt 0 ]; then
                 echo "" >> $GITHUB_STEP_SUMMARY
-                echo "<details><summary>:green_circle: Нейтрализованные ($MITIGATED) — развернуть</summary>" >> $GITHUB_STEP_SUMMARY
+                echo "<details><summary>:green_circle: Частичные <50% ($MITIGATED) — развернуть</summary>" >> $GITHUB_STEP_SUMMARY
                 echo "" >> $GITHUB_STEP_SUMMARY
                 echo "| CAPEC | Вектор атаки | ATT&CK | Покрытие |" >> $GITHUB_STEP_SUMMARY
                 echo "|-------|--------------|--------|----------|" >> $GITHUB_STEP_SUMMARY
